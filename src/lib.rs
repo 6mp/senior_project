@@ -1,7 +1,7 @@
 mod types;
 mod utils;
 
-use types::todo_list;
+use types::todo_list::{self, AuthError};
 use worker::*;
 
 fn preflight_response(headers: &worker::Headers, cors_origin: &str) -> Result<Response> {
@@ -26,6 +26,35 @@ fn preflight_response(headers: &worker::Headers, cors_origin: &str) -> Result<Re
         .with_status(204))
 }
 
+async fn authenticate(
+    headers: &worker::Headers,
+    kv: worker::kv::KvStore,
+) -> std::result::Result<todo_list::Data, AuthError> {
+    if let (Ok(Some(user)), Ok(Some(pass))) = (headers.get("username"), headers.get("password")) {
+        return match kv
+            .get(user.as_str())
+            .json::<todo_list::Data>()
+            .await
+            .unwrap()
+        {
+            //account already exists
+            Some(account) => {
+                let hashed_pass = seahash::hash(pass.as_bytes()).to_string();
+
+                if hashed_pass != account.hashed_password {
+                    return Err(AuthError::IncorrectPassword);
+                }
+
+                Ok(account)
+            }
+            //account not in kv store
+            None => Err(AuthError::AccountNotFound),
+        };
+    }
+
+    Err(AuthError::HeadersMissing)
+}
+
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Response> {
     utils::log_request(&req);
@@ -42,31 +71,17 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 })
             };
 
-            if let (Ok(Some(user)), Ok(Some(pass))) =
-                (headers.get("username"), headers.get("password"))
-            {
-                return match ctx
-                    .kv("todo_list")?
-                    .get(user.as_str())
-                    .json::<todo_list::Data>()
-                    .await?
-                {
-                    //account already exists
-                    Some(account) => {
-                        let hashed_pass = seahash::hash(pass.as_bytes()).to_string();
-
-                        if hashed_pass != account.hashed_password {
-                            return make_resp(
-                                false,
-                                "incorrect password or username already taken",
-                            )?
-                            .with_cors(&utils::CORS);
-                        }
-
-                        make_resp(true, "logged in")?.with_cors(&utils::CORS)
+            match authenticate(headers, ctx.kv("todo_list")?).await {
+                Ok(_account) => make_resp(true, "logged in")?.with_cors(&utils::CORS),
+                Err(e) => match e {
+                    AuthError::IncorrectPassword => {
+                        make_resp(false, "incorrect password or username already taken")?
+                            .with_cors(&utils::CORS)
                     }
-                    //account doesnt exist, insert into kv store
-                    None => {
+                    AuthError::AccountNotFound => {
+                        //i know none of these unwraps will fail because the authenticate function has already checked if these headers exist
+                        let user = headers.get("password")?.unwrap();
+                        let pass = headers.get("password")?.unwrap();
                         let hashed_pass = seahash::hash(pass.as_bytes()).to_string();
 
                         ctx.kv("todo_list")?
@@ -82,19 +97,32 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
 
                         make_resp(true, "created account")?.with_cors(&utils::CORS)
                     }
-                };
-            } else {
-                make_resp(false, "missing username or password field")?.with_cors(&utils::CORS)
+                    AuthError::HeadersMissing => {
+                        make_resp(false, "missing username or password headers")?
+                            .with_cors(&utils::CORS)
+                    }
+                },
             }
         })
         .get_async("/items", |req, ctx| async move {
-            let headers = req.headers();
+            /*            let headers = req.headers();
             let make_resp = |success: bool, content: &str| {
                 Response::from_json(&todo_list::Response {
                     success,
                     content: content.to_string(),
                 })
             };
+
+            if let (Ok(Some(user)), Ok(Some(pass))) =
+                (headers.get("username"), headers.get("password"))
+            {
+                return match ctx
+                    .kv("todo_list")?
+                    .get(user.as_str())
+                    .json::<todo_list::Data>()
+                    .await? {};
+            }*/
+            Response::ok("w")
         })
         .options("/login", |req, ctx| {
             preflight_response(req.headers(), &ctx.var("CORS_ORIGIN")?.to_string())
