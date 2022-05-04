@@ -1,0 +1,20 @@
+[package]
+name = "senior_project"
+version = "0.1.0"
+authors = ["matt <30198937+6mp@users.noreply.github.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+worker = "0.0.9"
+serde = { version = "1.0.137", features = ["derive"] }
+serde_json = "1.0.67"
+lazy_static = "1.4.0"
+seahash = "4.1.0"
+rust-crypto-wasm = "0.3.1"
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

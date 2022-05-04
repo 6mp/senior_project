@@ -1,0 +1,28 @@
+name = "senior_project"
+type = "javascript"
+workers_dev = true
+compatibility_date = "2022-05-03"
+
+
+kv_namespaces = [
+    { binding = "todo_list", preview_id = "9244b6e0c3b14507a97cbbbabe4bf311", id = "3b807bd8f17246d5b22c7d60822e56a6" }
+]
+
+
+[vars]
+WORKERS_RS_VERSION = "0.0.9"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release" # required
+
+[build.upload]
+dir = "build/worker"
+format = "modules"
+main = "./shim.mjs"
+
+[[build.upload.rules]]
+globs = ["**/*.wasm"]
+type = "CompiledWasm"
+
+# read more about configuring your Worker via wrangler.toml at:
+# https://developers.cloudflare.com/workers/cli-wrangler/configuration
