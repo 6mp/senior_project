@@ -1,8 +1,6 @@
 pub mod todo_list {
     use serde::{Deserialize, Serialize};
-    use std::error::Error;
-    use std::fmt;
-    use std::fmt::{Display, Formatter};
+    use std::fmt::{self, Display, Formatter};
 
     #[derive(Deserialize, Serialize, Debug)]
     pub struct Item {

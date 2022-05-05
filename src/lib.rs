@@ -110,8 +110,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Err(e) => handle_auth_error(make_resp, e),
             }
         })
-        .post_async("/put_item", |mut req, ctx| async move {
-            let headers = req.headers();
+        .post_async("/post_item", |mut req, ctx| async move {
+            let headers = req.headers().clone();
             let make_resp = |success: bool, content: String| {
                 Response::from_json(&todo_list::Response { success, content })
             };
@@ -120,15 +120,52 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Ok(mut account) => {
                     let item = req.json::<todo_list::Item>().await?;
                     account.items.push(item);
-                    /*                    ctx.kv("todo_list")?
-                    .put(headers.get("username").unwrap().unwrap().as_str(), account);*/
-                    Response::ok("temp")
+
+                    // i can unwrap twice since this header has already been confirmed in the `authenticate` function
+                    let username = headers.get("username").unwrap().unwrap();
+                    ctx.kv("todo_list")?
+                        .put(username.as_str(), account)?
+                        .execute()
+                        .await?;
+
+                    make_resp(true, "pushed item".to_string())
+                }
+                Err(e) => handle_auth_error(make_resp, e),
+            }
+        })
+        .delete_async("/delete_item", |mut req, ctx| async move {
+            let headers = req.headers().clone();
+            let make_resp = |success: bool, content: String| {
+                Response::from_json(&todo_list::Response { success, content })
+            };
+
+            match authenticate(&headers, ctx.kv("todo_list")?).await {
+                Ok(mut account) => {
+                    let task = req.json::<todo_list::Item>().await?.task;
+
+                    //delete item from todo list
+                    match account.items.iter().position(|item| *item.task == task) {
+                        Some(pos) => {
+                            account.items.remove(pos);
+                            // i can unwrap twice since this header has already been confirmed in the `authenticate` function
+                            let username = headers.get("username").unwrap().unwrap();
+                            ctx.kv("todo_list")?
+                                .put(username.as_str(), account)?
+                                .execute()
+                                .await?;
+
+                            make_resp(true, "deleted item".to_string())
+                        }
+                        None => make_resp(false, "no such item".to_string()),
+                    }
                 }
                 Err(e) => handle_auth_error(make_resp, e),
             }
         })
         .options("/login", |_, _| preflight_response())
         .options("/items", |_, _| preflight_response())
+        .options("/post_item", |_, _| preflight_response())
+        .options("/delete_item", |_, _| preflight_response())
         .run(req, env)
         .await
 }
