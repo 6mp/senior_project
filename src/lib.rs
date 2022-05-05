@@ -4,21 +4,11 @@ mod utils;
 use types::todo_list::{self, AuthError};
 use worker::*;
 
-fn preflight_response(headers: &worker::Headers, cors_origin: &str) -> Result<Response> {
-    let origin = match headers.get("Origin").unwrap() {
-        Some(value) => value,
-        None => return Response::empty(),
-    };
+fn preflight_response() -> Result<Response> {
     let mut headers = worker::Headers::new();
     headers.set("Access-Control-Allow-Headers", "*")?;
     headers.set("Access-Control-Allow-Methods", "*")?;
-
-    for origin_element in cors_origin.split(',') {
-        if origin.eq(origin_element) {
-            headers.set("Access-Control-Allow-Origin", &origin)?;
-            break;
-        }
-    }
+    headers.set("Access-Control-Allow-Origin", "*")?;
     headers.set("Access-Control-Max-Age", "86400")?;
     Ok(Response::empty()
         .unwrap()
@@ -51,8 +41,18 @@ async fn authenticate(
             None => Err(AuthError::AccountNotFound),
         };
     }
-
     Err(AuthError::HeadersMissing)
+}
+
+fn handle_auth_error(
+    make_resp: fn(bool, String) -> Result<Response>,
+    e: AuthError,
+) -> Result<Response> {
+    match e {
+        AuthError::IncorrectPassword => make_resp(true, e.to_string())?.with_cors(&utils::CORS),
+        AuthError::AccountNotFound => make_resp(true, e.to_string())?.with_cors(&utils::CORS),
+        AuthError::HeadersMissing => make_resp(true, e.to_string())?.with_cors(&utils::CORS),
+    }
 }
 
 #[event(fetch)]
@@ -64,19 +64,15 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
     router
         .get_async("/login", |req, ctx| async move {
             let headers = req.headers();
-            let make_resp = |success: bool, content: &str| {
-                Response::from_json(&todo_list::Response {
-                    success,
-                    content: content.to_string(),
-                })
+            let make_resp = |success: bool, content: String| {
+                Response::from_json(&todo_list::Response { success, content })
             };
 
             match authenticate(headers, ctx.kv("todo_list")?).await {
-                Ok(_account) => make_resp(true, "logged in")?.with_cors(&utils::CORS),
+                Ok(_account) => make_resp(true, "logged in".to_string())?.with_cors(&utils::CORS),
                 Err(e) => match e {
                     AuthError::IncorrectPassword => {
-                        make_resp(false, "incorrect password or username already taken")?
-                            .with_cors(&utils::CORS)
+                        make_resp(false, e.to_string())?.with_cors(&utils::CORS)
                     }
                     AuthError::AccountNotFound => {
                         //i know none of these unwraps will fail because the authenticate function has already checked if these headers exist
@@ -95,41 +91,44 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                             .execute()
                             .await?;
 
-                        make_resp(true, "created account")?.with_cors(&utils::CORS)
+                        make_resp(true, "created account".to_string())?.with_cors(&utils::CORS)
                     }
                     AuthError::HeadersMissing => {
-                        make_resp(false, "missing username or password headers")?
-                            .with_cors(&utils::CORS)
+                        make_resp(false, e.to_string())?.with_cors(&utils::CORS)
                     }
                 },
             }
         })
-        .get_async("/items", |req, ctx| async move {
-            /*            let headers = req.headers();
-            let make_resp = |success: bool, content: &str| {
-                Response::from_json(&todo_list::Response {
-                    success,
-                    content: content.to_string(),
-                })
+        .get_async("/get_items", |req, ctx| async move {
+            let headers = req.headers();
+            let make_resp = |success: bool, content: String| {
+                Response::from_json(&todo_list::Response { success, content })
             };
 
-            if let (Ok(Some(user)), Ok(Some(pass))) =
-                (headers.get("username"), headers.get("password"))
-            {
-                return match ctx
-                    .kv("todo_list")?
-                    .get(user.as_str())
-                    .json::<todo_list::Data>()
-                    .await? {};
-            }*/
-            Response::ok("w")
+            match authenticate(headers, ctx.kv("todo_list")?).await {
+                Ok(account) => make_resp(true, serde_json::to_string(&account.items).unwrap()),
+                Err(e) => handle_auth_error(make_resp, e),
+            }
         })
-        .options("/login", |req, ctx| {
-            preflight_response(req.headers(), &ctx.var("CORS_ORIGIN")?.to_string())
+        .post_async("/put_item", |mut req, ctx| async move {
+            let headers = req.headers();
+            let make_resp = |success: bool, content: String| {
+                Response::from_json(&todo_list::Response { success, content })
+            };
+
+            match authenticate(&headers, ctx.kv("todo_list")?).await {
+                Ok(mut account) => {
+                    let item = req.json::<todo_list::Item>().await?;
+                    account.items.push(item);
+                    /*                    ctx.kv("todo_list")?
+                    .put(headers.get("username").unwrap().unwrap().as_str(), account);*/
+                    Response::ok("temp")
+                }
+                Err(e) => handle_auth_error(make_resp, e),
+            }
         })
-        .options("/items", |req, ctx| {
-            preflight_response(req.headers(), &ctx.var("CORS_ORIGIN")?.to_string())
-        })
+        .options("/login", |_, _| preflight_response())
+        .options("/items", |_, _| preflight_response())
         .run(req, env)
         .await
 }

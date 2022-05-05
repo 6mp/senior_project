@@ -13,7 +13,7 @@ pub mod todo_list {
     #[derive(Deserialize, Serialize, Debug)]
     pub struct Data {
         pub hashed_password: String,
-        pub items: Vec<Data>,
+        pub items: Vec<Item>,
     }
 
     #[derive(Deserialize, Serialize, Debug)]
@@ -26,21 +26,15 @@ pub mod todo_list {
     pub enum AuthError {
         IncorrectPassword,
         AccountNotFound,
-        HeadersMissing
+        HeadersMissing,
     }
 
     impl Display for AuthError {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            todo!()
-        }
-    }
-
-    impl Error for AuthError {
-        fn description(&self) -> &str {
             match *self {
-                AuthError::IncorrectPassword => "username taken or incorrect password",
-                AuthError::AccountNotFound => "no account exists with thi username",
-                AuthError::HeadersMissing => "missing username or password headers",
+                AuthError::IncorrectPassword => write!(f, "username taken or incorrect password"),
+                AuthError::AccountNotFound => write!(f, "no account exists with this username"),
+                AuthError::HeadersMissing => write!(f, "missing username or password headers"),
             }
         }
     }
