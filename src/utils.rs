@@ -5,7 +5,12 @@ lazy_static! {
     pub static ref CORS: Cors = Cors::default()
         .with_max_age(86400)
         .with_origins(vec!["*"])
-        .with_methods(vec![Method::Get, Method::Post, Method::Options,]);
+        .with_methods(vec![
+            Method::Get,
+            Method::Post,
+            Method::Options,
+            Method::Delete
+        ]);
 }
 
 pub fn log_request(req: &Request) {

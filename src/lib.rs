@@ -49,9 +49,9 @@ fn handle_auth_error(
     e: AuthError,
 ) -> Result<Response> {
     match e {
-        AuthError::IncorrectPassword => make_resp(true, e.to_string())?.with_cors(&utils::CORS),
-        AuthError::AccountNotFound => make_resp(true, e.to_string())?.with_cors(&utils::CORS),
-        AuthError::HeadersMissing => make_resp(true, e.to_string())?.with_cors(&utils::CORS),
+        AuthError::IncorrectPassword => make_resp(false, e.to_string())?.with_cors(&utils::CORS),
+        AuthError::AccountNotFound => make_resp(false, e.to_string())?.with_cors(&utils::CORS),
+        AuthError::HeadersMissing => make_resp(false, e.to_string())?.with_cors(&utils::CORS),
     }
 }
 
@@ -65,7 +65,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .get_async("/login", |req, ctx| async move {
             let headers = req.headers();
             let make_resp = |success: bool, content: String| {
-                Response::from_json(&todo_list::Response { success, content })
+                Response::from_json(&todo_list::Response { success, content })?
+                    .with_cors(&utils::CORS)
             };
 
             match authenticate(headers, ctx.kv("todo_list")?).await {
@@ -102,7 +103,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .get_async("/get_items", |req, ctx| async move {
             let headers = req.headers();
             let make_resp = |success: bool, content: String| {
-                Response::from_json(&todo_list::Response { success, content })
+                Response::from_json(&todo_list::Response { success, content })?
+                    .with_cors(&utils::CORS)
             };
 
             match authenticate(headers, ctx.kv("todo_list")?).await {
@@ -113,7 +115,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .post_async("/post_item", |mut req, ctx| async move {
             let headers = req.headers().clone();
             let make_resp = |success: bool, content: String| {
-                Response::from_json(&todo_list::Response { success, content })
+                Response::from_json(&todo_list::Response { success, content })?
+                    .with_cors(&utils::CORS)
             };
 
             match authenticate(&headers, ctx.kv("todo_list")?).await {
@@ -136,15 +139,20 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .delete_async("/delete_item", |mut req, ctx| async move {
             let headers = req.headers().clone();
             let make_resp = |success: bool, content: String| {
-                Response::from_json(&todo_list::Response { success, content })
+                Response::from_json(&todo_list::Response { success, content })?
+                    .with_cors(&utils::CORS)
             };
 
             match authenticate(&headers, ctx.kv("todo_list")?).await {
                 Ok(mut account) => {
-                    let task = req.json::<todo_list::Item>().await?.task;
+                    let insert_time = req.json::<todo_list::Item>().await?.insert_time;
 
-                    //delete item from todo list
-                    match account.items.iter().position(|item| *item.task == task) {
+                    //delete item from to do list
+                    match account
+                        .items
+                        .iter()
+                        .position(|item| *item.insert_time == insert_time)
+                    {
                         Some(pos) => {
                             account.items.remove(pos);
                             // i can unwrap twice since this header has already been confirmed in the `authenticate` function
@@ -163,7 +171,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             }
         })
         .options("/login", |_, _| preflight_response())
-        .options("/items", |_, _| preflight_response())
+        .options("/get_items", |_, _| preflight_response())
         .options("/post_item", |_, _| preflight_response())
         .options("/delete_item", |_, _| preflight_response())
         .run(req, env)
