@@ -77,7 +77,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                     }
                     AuthError::AccountNotFound => {
                         //i know none of these unwraps will fail because the authenticate function has already checked if these headers exist
-                        let user = headers.get("password")?.unwrap();
+                        let user = headers.get("username")?.unwrap();
                         let pass = headers.get("password")?.unwrap();
                         let hashed_pass = seahash::hash(pass.as_bytes()).to_string();
 
