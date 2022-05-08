@@ -4,7 +4,8 @@ pub mod todo_list {
 
     #[derive(Deserialize, Serialize, Debug)]
     pub struct Item {
-        pub task: String,
+        pub title: String,
+        pub details: String,
         pub insert_time: String,
     }
 

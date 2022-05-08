@@ -17,8 +17,8 @@ fn preflight_response() -> Result<Response> {
 }
 
 async fn authenticate(
-    headers: &worker::Headers,
-    kv: worker::kv::KvStore,
+    headers: &Headers,
+    kv: kv::KvStore,
 ) -> std::result::Result<todo_list::Data, AuthError> {
     if let (Ok(Some(user)), Ok(Some(pass))) = (headers.get("username"), headers.get("password")) {
         return match kv
